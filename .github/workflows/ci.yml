@@ -1,0 +1,26 @@
+# Pull request checks. Pushes to main are tested and built by release.yml, so
+# each commit on main gets exactly one test and build run.
+name: ci
+on:
+  pull_request:
+    # The release PR only touches these files on top of main, whose code
+    # release.yml has already tested and built.
+    paths-ignore:
+      - CHANGELOG.md
+      - .release-please-manifest.json
+permissions:
+  contents: read
+concurrency:
+  # A new push to the PR supersedes the run for the previous head.
+  group: ci-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+jobs:
+  test:
+    uses: ./.github/workflows/test.yml
+  build-matrix:
+    # Every release target is compiled for every PR so a breakage shows up
+    # before it reaches main.
+    needs: test
+    uses: ./.github/workflows/build.yml
+    with:
+      version: ci-${{ github.sha }}

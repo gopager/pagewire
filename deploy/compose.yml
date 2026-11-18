@@ -1,0 +1,19 @@
+# Example deployment: one gateway instance next to a target server.
+# The dongle is passed through as a USB device; the queue lives in a volume.
+services:
+  gateway:
+    image: ghcr.io/gopager/pagewire:latest
+    restart: unless-stopped
+    devices:
+      - /dev/bus/usb
+    volumes:
+      - ./pagewire.yaml:/etc/pagewire/pagewire.yaml:ro
+      - gateway-state:/var/lib/pagewire
+    environment:
+      # Scalars can be overridden without editing the file:
+      # PAGEWIRE__SOURCES__0__RTLSDR__PPM: "12"
+      PAGEWIRE__OBSERVABILITY__LOG__FORMAT: json
+    ports:
+      - "9464:9464"
+volumes:
+  gateway-state:

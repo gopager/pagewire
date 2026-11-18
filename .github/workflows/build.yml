@@ -1,0 +1,102 @@
+# Reusable build: static Linux binaries (buildx + xx), macOS (native cgo),
+# Windows (mingw-w64 cross compile). Produces one artifact per platform.
+name: build
+on:
+  workflow_call:
+    inputs:
+      version:
+        required: true
+        type: string
+permissions:
+  contents: read
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: docker/setup-qemu-action@v4
+      - uses: docker/setup-buildx-action@v4
+      - id: commit
+        run: echo "short=${GITHUB_SHA::12}" >> "$GITHUB_OUTPUT"
+      # The build stage is cached under scope "linux"; release.yml builds the
+      # container image from the same stage with identical build args and
+      # reuses the compiled binaries from this cache.
+      - name: Static Linux binaries
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: deploy/docker/Dockerfile
+          target: artifacts
+          platforms: linux/amd64,linux/arm64,linux/arm/v7
+          build-args: |
+            VERSION=${{ inputs.version }}
+            COMMIT=${{ steps.commit.outputs.short }}
+          outputs: type=local,dest=dist
+          # Attestations would be written into the per-platform output
+          # directories next to the binaries.
+          provenance: false
+          sbom: false
+          cache-from: type=gha,scope=linux
+          cache-to: type=gha,scope=linux,mode=max
+      - name: Name binaries
+        run: cd dist && for d in */; do p=${d%/}; mv "$p/pagewire" "pagewire-${{ inputs.version }}-${p}"; rmdir "$p"; done
+      - name: Man page
+        run: |
+          chmod +x dist/pagewire-${{ inputs.version }}-linux_amd64
+          dist/pagewire-${{ inputs.version }}-linux_amd64 manpage > dist/pagewire.1
+      - uses: actions/upload-artifact@v7
+        with:
+          name: linux
+          path: dist/*
+  macos:
+    strategy:
+      matrix:
+        include:
+          # Oldest hosted images per architecture (see actions/runner-images);
+          # the deployment target below keeps the binaries running on
+          # macOS 12 and later regardless of the runner's SDK.
+          - runner: macos-15
+            arch: arm64
+          - runner: macos-15-intel
+            arch: amd64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - name: Build
+        env:
+          CGO_ENABLED: "1"
+          MACOSX_DEPLOYMENT_TARGET: "12.0"
+        run: |
+          go build -trimpath -ldflags "-s -w -X github.com/gopager/pagewire/internal/buildinfo.Version=${{ inputs.version }} -X github.com/gopager/pagewire/internal/buildinfo.commit=${GITHUB_SHA::12}" \
+            -o dist/pagewire-${{ inputs.version }}-darwin_${{ matrix.arch }} ./cmd/pagewire
+          dist/pagewire-${{ inputs.version }}-darwin_${{ matrix.arch }} version
+      - uses: actions/upload-artifact@v7
+        with:
+          name: darwin-${{ matrix.arch }}
+          path: dist/*
+  windows:
+    # Cross-compiled with mingw-w64 on Linux; the WinUSB backend of libusb is
+    # compiled in. Users install the WinUSB driver for the dongle with Zadig.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - run: sudo apt-get update && sudo apt-get install -y gcc-mingw-w64-x86-64
+      - name: Build
+        env:
+          CGO_ENABLED: "1"
+          GOOS: windows
+          GOARCH: amd64
+          CC: x86_64-w64-mingw32-gcc
+        run: |
+          go build -trimpath -ldflags "-s -w -X github.com/gopager/pagewire/internal/buildinfo.Version=${{ inputs.version }} -X github.com/gopager/pagewire/internal/buildinfo.commit=${GITHUB_SHA::12}" \
+            -o dist/pagewire-${{ inputs.version }}-windows_amd64.exe ./cmd/pagewire
+      - uses: actions/upload-artifact@v7
+        with:
+          name: windows
+          path: dist/*

@@ -1,0 +1,26 @@
+#!/sbin/openrc-run
+# OpenRC service for pagewire (Alpine and other OpenRC systems).
+# Install: cp deploy/openrc/pagewire /etc/init.d/ && rc-update add pagewire default
+# Config:  /etc/pagewire/pagewire.yaml; optional variables
+#          (API keys for ${VAR} expansion) in /etc/pagewire/pagewire.env
+
+description="SDR pager receiver, decoder and delivery gateway"
+command="/usr/local/bin/pagewire"
+command_args="run --config /etc/pagewire/pagewire.yaml"
+supervisor=supervise-daemon
+respawn_delay=5
+respawn_max=0
+output_log=/var/log/pagewire.log
+error_log=/var/log/pagewire.log
+
+# Variables exported here reach the daemon's environment.
+if [ -r /etc/pagewire/pagewire.env ]; then
+	set -a
+	. /etc/pagewire/pagewire.env
+	set +a
+fi
+
+depend() {
+	need net
+	after firewall
+}

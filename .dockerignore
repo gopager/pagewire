@@ -1,0 +1,4 @@
+# The repository metadata differs between checkouts of the same commit and
+# would invalidate the cached build layers; the commit is passed as COMMIT.
+.git
+dist

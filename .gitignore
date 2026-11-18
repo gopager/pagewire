@@ -1,0 +1,9 @@
+/bin/
+/dist/
+*.db
+*.cu8
+*.raw
+*.wav
+/pagewire
+/pagewire.yaml
+coverage.out

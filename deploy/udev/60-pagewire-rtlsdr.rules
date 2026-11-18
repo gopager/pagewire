@@ -1,0 +1,8 @@
+# RTL2832U based SDR dongles: allow members of the "plugdev" group to open
+# them and keep the DVB kernel driver from claiming the device. Install to
+# /etc/udev/rules.d/ and run "udevadm control --reload && udevadm trigger".
+SUBSYSTEM=="usb", ATTRS{idVendor}=="0bda", ATTRS{idProduct}=="2838", MODE="0660", GROUP="plugdev", TAG+="uaccess"
+SUBSYSTEM=="usb", ATTRS{idVendor}=="0bda", ATTRS{idProduct}=="2832", MODE="0660", GROUP="plugdev", TAG+="uaccess"
+# The gateway detaches the dvb_usb_rtl28xxu driver itself; blacklisting it
+# (/etc/modprobe.d/rtlsdr-blacklist.conf: "blacklist dvb_usb_rtl28xxu") is
+# optional but avoids the kernel grabbing the dongle at boot.

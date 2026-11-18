@@ -1,0 +1,97 @@
+# Pipeline for every push to main: test, then release-please, then one build of
+# all release targets. Releases are cut by release-please: conventional commits
+# on main feed a release PR; merging it creates the tag vX.Y.Z and a draft
+# GitHub release, which this workflow fills with binaries, the man page and
+# images and only then publishes. Consumers of the "release published" event
+# therefore always find every asset and image in place. Without a release the
+# build only proves that every target still compiles.
+name: release
+on:
+  push:
+    branches: [main]
+permissions:
+  contents: write
+  pull-requests: write
+  packages: write
+jobs:
+  test:
+    uses: ./.github/workflows/test.yml
+    permissions:
+      contents: read
+  release-please:
+    # A commit that fails the tests is never tagged; release-please picks the
+    # merged release PR up again on the next push to main.
+    needs: test
+    runs-on: ubuntu-latest
+    outputs:
+      released: ${{ steps.rp.outputs.release_created }}
+      tag: ${{ steps.rp.outputs.tag_name }}
+    steps:
+      - uses: googleapis/release-please-action@v5
+        id: rp
+        # No inputs: the action reads release-please-config.json and
+        # .release-please-manifest.json (manifest mode); a release-type
+        # input would make it ignore both.
+  build:
+    needs: release-please
+    uses: ./.github/workflows/build.yml
+    permissions:
+      contents: read
+    with:
+      version: ${{ needs.release-please.outputs.released == 'true' && needs.release-please.outputs.tag || format('ci-{0}', github.sha) }}
+  publish:
+    needs: [release-please, build]
+    if: needs.release-please.outputs.released == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - id: commit
+        run: echo "short=${GITHUB_SHA::12}" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          path: dist
+          merge-multiple: true
+      - run: cd dist && sha256sum pagewire-* > SHA256SUMS
+      # gh finds the draft by its pending tag name, which the REST lookup by
+      # tag does not.
+      - name: Attach assets to the draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.release-please.outputs.tag }}
+        run: gh release upload "$TAG" dist/pagewire-* dist/pagewire.1 dist/SHA256SUMS --clobber
+      - uses: docker/setup-qemu-action@v4
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/metadata-action@v6
+        id: meta
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=semver,pattern={{version}},value=${{ needs.release-please.outputs.tag }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ needs.release-please.outputs.tag }}
+            type=raw,value=latest
+      - uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: deploy/docker/Dockerfile
+          platforms: linux/amd64,linux/arm64,linux/arm/v7
+          push: true
+          # Build args must match build.yml so the compiled binaries come from
+          # the cache that its Linux job has just written.
+          build-args: |
+            VERSION=${{ needs.release-please.outputs.tag }}
+            COMMIT=${{ steps.commit.outputs.short }}
+          cache-from: type=gha,scope=linux
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+      # Last step: publishing fires the "release published" event, so it must
+      # follow the assets and the images.
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.release-please.outputs.tag }}
+        run: gh release edit "$TAG" --draft=false

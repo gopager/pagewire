@@ -1,0 +1,30 @@
+# One gateway instance per unit instance name, e.g.
+#   systemctl enable --now pagewire@vhf
+# reads /etc/pagewire/vhf.yaml and keeps its queue under
+# /var/lib/pagewire/. Several instances may run side by side with
+# distinct queue paths and metrics ports in their configurations.
+[Unit]
+Description=pagewire instance %i
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pagewire
+Group=plugdev
+ExecStart=/usr/local/bin/pagewire run --config /etc/pagewire/%i.yaml
+Restart=always
+RestartSec=5
+StateDirectory=pagewire
+ConfigurationDirectory=pagewire
+Environment=GOMEMLIMIT=96MiB
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+DevicePolicy=closed
+DeviceAllow=char-usb_device rw
+ReadWritePaths=/var/lib/pagewire
+
+[Install]
+WantedBy=multi-user.target
