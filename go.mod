@@ -5,7 +5,7 @@ go 1.27.4
 require (
 	github.com/alecthomas/kong v1.17.0
 	github.com/alecthomas/mango-kong v0.1.0
-	github.com/go-viper/mapstructure/v2 v2.4.0
+	github.com/go-viper/mapstructure/v2 v2.5.0
 	github.com/jfreymuth/pulse v0.1.3
 	github.com/knadh/koanf/parsers/yaml v1.1.1
 	github.com/knadh/koanf/providers/rawbytes v1.0.1
